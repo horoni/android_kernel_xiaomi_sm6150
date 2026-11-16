@@ -1,0 +1,89 @@
+From 56e2fd6892481b5ac77c29550db6303ed59ce7aa Mon Sep 17 00:00:00 2001
+From: horoni <71940406+horoni@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 08:39:31 +0000
+Subject: [PATCH] kernel: fix 4.14 non-GKI build with -Werror
+
+Four compile errors on a 4.14 tree with CONFIG_CC_WERROR=y:
+
+- preinit/common/preinit.h: the Makefile passes -DKSU_NO_PREINIT=1 when
+  usr/include has not been generated yet, so guard the header's own
+  fallback #define to avoid -Wmacro-redefined.
+
+- kernel_compat.h: kvcalloc() only exists since 4.18; provide it on top
+  of kvmalloc_array(..., __GFP_ZERO), matching upstream builtin-new.
+
+- extension/kpm/kpm.c: access_ok() takes (type, addr, size) before 5.0,
+  so use the VERIFY_WRITE form there (same as upstream builtin-new).
+
+- selinux/rules.c: pol/old_pol are only used by the >= 5.10 policy
+  replacement path, so declare them inside that branch to avoid
+  -Wunused-variable on older kernels.
+---
+ kernel/extension/kpm/kpm.c      | 4 ++++
+ kernel/kernel_compat.h          | 4 ++++
+ kernel/preinit/common/preinit.h | 4 ++++
+ kernel/selinux/rules.c          | 2 ++
+ 4 files changed, 14 insertions(+)
+
+diff --git a/kernel/extension/kpm/kpm.c b/kernel/extension/kpm/kpm.c
+index 5735c2d3..760ea073 100644
+--- a/kernel/extension/kpm/kpm.c
++++ b/kernel/extension/kpm/kpm.c
+@@ -179,7 +179,11 @@ int do_kpm(void __user *arg)
+     int result;
+     /* Called only through the manager_or_root-authorized extension ioctl. */
+     if (copy_from_user(&cmd, arg, sizeof(cmd))) return -EFAULT;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
++    if (!access_ok(VERIFY_WRITE, u64_to_user_ptr(cmd.result_code), sizeof(result))) return -EFAULT;
++#else
+     if (!access_ok(u64_to_user_ptr(cmd.result_code), sizeof(result))) return -EFAULT;
++#endif
+     result = handle_kpm(&cmd);
+     return copy_to_user(u64_to_user_ptr(cmd.result_code), &result, sizeof(result)) ? -EFAULT : 0;
+ }
+diff --git a/kernel/kernel_compat.h b/kernel/kernel_compat.h
+index 8493a7ac..22da2259 100644
+--- a/kernel/kernel_compat.h
++++ b/kernel/kernel_compat.h
+@@ -171,6 +171,10 @@ static inline void *ksu_kvmalloc_array(size_t n, size_t size, gfp_t flags)
+ #define kvfree ksu_kvfree
+ #endif
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 18, 0)
++#define kvcalloc(n, size, flags) kvmalloc_array(n, size, (flags) | __GFP_ZERO)
++#endif
++
+ // for supercalls.c fd install tw
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 7, 0)
+ #ifndef TWA_RESUME
+diff --git a/kernel/preinit/common/preinit.h b/kernel/preinit/common/preinit.h
+index 980cf0a8..9f92448b 100644
+--- a/kernel/preinit/common/preinit.h
++++ b/kernel/preinit/common/preinit.h
+@@ -2,8 +2,12 @@
+ #define __KSU_H_PREINIT
+ 
+ #if !defined(CONFIG_ARM64) || !defined(KSU_CAN_USE_JUMP_LABEL)
++/* May already come from the Makefile when usr/include has not been
++ * generated yet ("preinit disabled"), so do not redefine it. */
++#ifndef KSU_NO_PREINIT
+ #define KSU_NO_PREINIT
+ #endif
++#endif
+ 
+ #ifndef KSU_NO_PREINIT
+ 
+diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
+index 6f73a740..ce941de5 100644
+--- a/kernel/selinux/rules.c
++++ b/kernel/selinux/rules.c
+@@ -151,7 +151,9 @@ static int apply_kernelsu_rules_fn(void *ptr)
+ 
+ void apply_kernelsu_rules(void)
+ {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+     struct selinux_policy *pol, *old_pol;
++#endif
+     struct policydb *db;
+ 
+     if (!getenforce()) {

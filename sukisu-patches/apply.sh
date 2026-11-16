@@ -18,7 +18,12 @@ if [ ! -e KernelSU/.git ] && [ ! -f KernelSU/.git ]; then
 	exit 1
 fi
 
+found=0
 for patch in sukisu-patches/*.patch; do
+	if [ ! -e "$patch" ]; then
+		continue
+	fi
+	found=1
 	name=$(basename "$patch")
 	if git -C KernelSU apply --reverse --check "$top/$patch" 2>/dev/null; then
 		echo "already applied: $name"
@@ -32,3 +37,8 @@ for patch in sukisu-patches/*.patch; do
 		exit 1
 	fi
 done
+
+if [ "$found" -eq 0 ]; then
+	echo "error: no patches found in sukisu-patches/" >&2
+	exit 1
+fi
