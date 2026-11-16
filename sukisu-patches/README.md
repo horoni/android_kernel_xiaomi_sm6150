@@ -1,22 +1,29 @@
 # SukiSU patches for this 4.14 tree
 
-The KernelSU submodule points at [SukiSU-Nova](https://github.com/SukiSU-Nova/SukiSU-Nova)
-branch `builtin`. Its `builtin` branch does not build on a non-GKI 4.14
-kernel with `CONFIG_CC_WERROR=y`, so this directory carries the minimal
-fixes as a patch series.
+The `KernelSU` submodule points at
+[SukiSU-Nova](https://github.com/SukiSU-Nova/SukiSU-Nova) branch `builtin`
+(upstream commit `4bec532d`). Its `builtin` branch does not build on a
+non-GKI 4.14 kernel with `CONFIG_CC_WERROR=y`, so this directory carries
+the minimal fixes as a patch series.
 
-The current gitlink points at a local submodule commit created on top of
-upstream `4bec532d`. If you ever re-clone this repo (or run
-`git submodule update --force` and get upstream `4bec532d` back), apply
-the patches again:
+The gitlink intentionally stays at the upstream commit: the fixes are
+**not** committed in the submodule, otherwise a fresh clone could not
+fetch the parent commit (GitHub cannot serve submodule commits that only
+exist locally).
+
+## Usage
+
+After a fresh clone, or after the submodule was reset/updated:
 
 ```sh
 git submodule update --init --recursive
-git -C KernelSU am ../sukisu-patches/*.patch
+./sukisu-patches/apply.sh
 ```
 
-If you want the state to survive a fresh clone without manual patching,
-push the submodule commit to a fork and update the URL in `.gitmodules`.
+The script is idempotent: already-applied patches are skipped. Changes
+stay in the submodule working tree, so `git status` will show
+`modified: KernelSU (modified content)`, and
+`git submodule update --force` reverts them (re-run the script after).
 
 ## Series
 
@@ -33,4 +40,5 @@ push the submodule commit to a fork and update the URL in `.gitmodules`.
 
 `include/linux/static_call.h` in the top-level tree is a separate
 compatibility stub: SukiSU's `kernel_includes.h` includes it
-unconditionally although `static_call` only exists since 5.10.
+unconditionally although `static_call` only exists since 5.10. It is
+tracked in the main repository, so it needs no patching.
